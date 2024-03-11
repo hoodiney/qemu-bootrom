@@ -9,6 +9,8 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
+#include "qemu/datadir.h"
+#include "hw/loader.h"
 #include "hw/sysbus.h"
 #include "migration/vmstate.h"
 #include "hw/arm/boot.h"
@@ -180,30 +182,58 @@ static void vpb_sic_init(Object *obj)
    PB peripherals and just change the board ID.  */
 
 static struct arm_boot_info versatile_binfo;
-
+// DUO: This is the board init function, called by the machine class init function
 static void versatile_init(MachineState *machine, int board_id)
 {
     Object *cpuobj;
     ARMCPU *cpu;
     MemoryRegion *sysmem = get_system_memory();
-    qemu_irq pic[32];
-    qemu_irq sic[32];
-    DeviceState *dev, *sysctl;
-    SysBusDevice *busdev;
-    DeviceState *pl041;
-    PCIBus *pci_bus;
-    I2CBus *i2c;
-    int n;
-    DriveInfo *dinfo;
+    // qemu_irq pic[32];
+    // qemu_irq sic[32];
+    // DeviceState *dev, *sysctl;
+    // SysBusDevice *busdev;
+    // DeviceState *pl041;
+    // PCIBus *pci_bus;
+    // I2CBus *i2c;
+    // int n;
+    // DriveInfo *dinfo;
+    const char *bios_name;
 
-    if (machine->ram_size > 0x10000000) {
-        /* Device starting at address 0x10000000,
-         * and memory cannot overlap with devices.
-         * Refuse to run rather than behaving very confusingly.
-         */
-        error_report("versatilepb: memory size must not exceed 256MB");
-        exit(1);
+    bios_name = MACHINE(machine)->firmware;
+    if (bios_name) {
+        char *fn;
+        int image_size;
+
+        if (drive_get(IF_PFLASH, 0, 0)) {
+            error_report("The contents of the first flash device may be "
+                         "specified with -bios or with -drive if=pflash... "
+                         "but you cannot use both options at once");
+            exit(1);
+        }
+        fn = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
+        if (!fn) {
+            error_report("Could not find ROM image '%s'", bios_name);
+            exit(1);
+        }
+        // DUO: load the file pointed by fn to 0x100000, doesn't matter if fn exists or not later.
+        image_size = load_image_targphys(fn, 0x100000,
+                                         0x18000);
+        g_free(fn);
+        if (image_size < 0) {
+            error_report("Could not load ROM image '%s'", bios_name);
+            exit(1);
+        }
     }
+    // DUO: based on the ida script
+    // machine->ram_size = 0x40000
+    // if (machine->ram_size > 0x10000000) {
+    //     /* Device starting at address 0x10000000,
+    //      * and memory cannot overlap with devices.
+    //      * Refuse to run rather than behaving very confusingly.
+    //      */
+    //     error_report("versatilepb: memory size must not exceed 256MB");
+    //     exit(1);
+    // }
 
     cpuobj = object_new(machine->cpu_type);
 
@@ -222,133 +252,136 @@ static void versatile_init(MachineState *machine, int board_id)
     /* ??? RAM should repeat to fill physical memory space.  */
     /* SDRAM at address zero.  */
     memory_region_add_subregion(sysmem, 0, machine->ram);
+    
+    // DUO：Add the RAM to address assigned in IDA script
+    // memory_region_add_subregion(sysmem, 0X40000000, machine->ram);
 
-    sysctl = qdev_new("realview_sysctl");
-    qdev_prop_set_uint32(sysctl, "sys_id", 0x41007004);
-    qdev_prop_set_uint32(sysctl, "proc_id", 0x02000000);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(sysctl), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(sysctl), 0, 0x10000000);
+    // sysctl = qdev_new("realview_sysctl");
+    // qdev_prop_set_uint32(sysctl, "sys_id", 0x41007004);
+    // qdev_prop_set_uint32(sysctl, "proc_id", 0x02000000);
+    // sysbus_realize_and_unref(SYS_BUS_DEVICE(sysctl), &error_fatal);
+    // sysbus_mmio_map(SYS_BUS_DEVICE(sysctl), 0, 0x10000000);
 
-    dev = sysbus_create_varargs("pl190", 0x10140000,
-                                qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ),
-                                qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ),
-                                NULL);
-    for (n = 0; n < 32; n++) {
-        pic[n] = qdev_get_gpio_in(dev, n);
-    }
-    dev = sysbus_create_simple(TYPE_VERSATILE_PB_SIC, 0x10003000, NULL);
-    for (n = 0; n < 32; n++) {
-        sysbus_connect_irq(SYS_BUS_DEVICE(dev), n, pic[n]);
-        sic[n] = qdev_get_gpio_in(dev, n);
-    }
+    // dev = sysbus_create_varargs("pl190", 0x10140000,
+    //                             qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ),
+    //                             qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ),
+    //                             NULL);
+    // for (n = 0; n < 32; n++) {
+    //     pic[n] = qdev_get_gpio_in(dev, n);
+    // }
+    // dev = sysbus_create_simple(TYPE_VERSATILE_PB_SIC, 0x10003000, NULL);
+    // for (n = 0; n < 32; n++) {
+    //     sysbus_connect_irq(SYS_BUS_DEVICE(dev), n, pic[n]);
+    //     sic[n] = qdev_get_gpio_in(dev, n);
+    // }
 
-    sysbus_create_simple("pl050_keyboard", 0x10006000, sic[3]);
-    sysbus_create_simple("pl050_mouse", 0x10007000, sic[4]);
+    // sysbus_create_simple("pl050_keyboard", 0x10006000, sic[3]);
+    // sysbus_create_simple("pl050_mouse", 0x10007000, sic[4]);
 
-    dev = qdev_new("versatile_pci");
-    busdev = SYS_BUS_DEVICE(dev);
-    sysbus_realize_and_unref(busdev, &error_fatal);
-    sysbus_mmio_map(busdev, 0, 0x10001000); /* PCI controller regs */
-    sysbus_mmio_map(busdev, 1, 0x41000000); /* PCI self-config */
-    sysbus_mmio_map(busdev, 2, 0x42000000); /* PCI config */
-    sysbus_mmio_map(busdev, 3, 0x43000000); /* PCI I/O */
-    sysbus_mmio_map(busdev, 4, 0x44000000); /* PCI memory window 1 */
-    sysbus_mmio_map(busdev, 5, 0x50000000); /* PCI memory window 2 */
-    sysbus_mmio_map(busdev, 6, 0x60000000); /* PCI memory window 3 */
-    sysbus_connect_irq(busdev, 0, sic[27]);
-    sysbus_connect_irq(busdev, 1, sic[28]);
-    sysbus_connect_irq(busdev, 2, sic[29]);
-    sysbus_connect_irq(busdev, 3, sic[30]);
-    pci_bus = (PCIBus *)qdev_get_child_bus(dev, "pci");
+    // dev = qdev_new("versatile_pci");
+    // busdev = SYS_BUS_DEVICE(dev);
+    // sysbus_realize_and_unref(busdev, &error_fatal);
+    // sysbus_mmio_map(busdev, 0, 0x10001000); /* PCI controller regs */
+    // sysbus_mmio_map(busdev, 1, 0x41000000); /* PCI self-config */
+    // sysbus_mmio_map(busdev, 2, 0x42000000); /* PCI config */
+    // sysbus_mmio_map(busdev, 3, 0x43000000); /* PCI I/O */
+    // sysbus_mmio_map(busdev, 4, 0x44000000); /* PCI memory window 1 */
+    // sysbus_mmio_map(busdev, 5, 0x50000000); /* PCI memory window 2 */
+    // sysbus_mmio_map(busdev, 6, 0x60000000); /* PCI memory window 3 */
+    // sysbus_connect_irq(busdev, 0, sic[27]);
+    // sysbus_connect_irq(busdev, 1, sic[28]);
+    // sysbus_connect_irq(busdev, 2, sic[29]);
+    // sysbus_connect_irq(busdev, 3, sic[30]);
+    // pci_bus = (PCIBus *)qdev_get_child_bus(dev, "pci");
 
-    if (qemu_find_nic_info("smc91c111", true, NULL)) {
-        smc91c111_init(0x10010000, sic[25]);
-    }
-    pci_init_nic_devices(pci_bus, "rtl8139");
+    // if (qemu_find_nic_info("smc91c111", true, NULL)) {
+    //     smc91c111_init(0x10010000, sic[25]);
+    // }
+    // pci_init_nic_devices(pci_bus, "rtl8139");
 
-    if (machine_usb(machine)) {
-        pci_create_simple(pci_bus, -1, "pci-ohci");
-    }
-    n = drive_get_max_bus(IF_SCSI);
-    while (n >= 0) {
-        dev = DEVICE(pci_create_simple(pci_bus, -1, "lsi53c895a"));
-        lsi53c8xx_handle_legacy_cmdline(dev);
-        n--;
-    }
+    // if (machine_usb(machine)) {
+    //     pci_create_simple(pci_bus, -1, "pci-ohci");
+    // }
+    // n = drive_get_max_bus(IF_SCSI);
+    // while (n >= 0) {
+    //     dev = DEVICE(pci_create_simple(pci_bus, -1, "lsi53c895a"));
+    //     lsi53c8xx_handle_legacy_cmdline(dev);
+    //     n--;
+    // }
 
-    pl011_create(0x101f1000, pic[12], serial_hd(0));
-    pl011_create(0x101f2000, pic[13], serial_hd(1));
-    pl011_create(0x101f3000, pic[14], serial_hd(2));
-    pl011_create(0x10009000, sic[6], serial_hd(3));
+    // pl011_create(0x101f1000, pic[12], serial_hd(0));
+    // pl011_create(0x101f2000, pic[13], serial_hd(1));
+    // pl011_create(0x101f3000, pic[14], serial_hd(2));
+    // pl011_create(0x10009000, sic[6], serial_hd(3));
 
-    dev = qdev_new("pl080");
-    object_property_set_link(OBJECT(dev), "downstream", OBJECT(sysmem),
-                             &error_fatal);
-    busdev = SYS_BUS_DEVICE(dev);
-    sysbus_realize_and_unref(busdev, &error_fatal);
-    sysbus_mmio_map(busdev, 0, 0x10130000);
-    sysbus_connect_irq(busdev, 0, pic[17]);
+    // dev = qdev_new("pl080");
+    // object_property_set_link(OBJECT(dev), "downstream", OBJECT(sysmem),
+    //                          &error_fatal);
+    // busdev = SYS_BUS_DEVICE(dev);
+    // sysbus_realize_and_unref(busdev, &error_fatal);
+    // sysbus_mmio_map(busdev, 0, 0x10130000);
+    // sysbus_connect_irq(busdev, 0, pic[17]);
 
-    sysbus_create_simple("sp804", 0x101e2000, pic[4]);
-    sysbus_create_simple("sp804", 0x101e3000, pic[5]);
+    // sysbus_create_simple("sp804", 0x101e2000, pic[4]);
+    // sysbus_create_simple("sp804", 0x101e3000, pic[5]);
 
-    sysbus_create_simple("pl061", 0x101e4000, pic[6]);
-    sysbus_create_simple("pl061", 0x101e5000, pic[7]);
-    sysbus_create_simple("pl061", 0x101e6000, pic[8]);
-    sysbus_create_simple("pl061", 0x101e7000, pic[9]);
+    // sysbus_create_simple("pl061", 0x101e4000, pic[6]);
+    // sysbus_create_simple("pl061", 0x101e5000, pic[7]);
+    // sysbus_create_simple("pl061", 0x101e6000, pic[8]);
+    // sysbus_create_simple("pl061", 0x101e7000, pic[9]);
 
-    /* The versatile/PB actually has a modified Color LCD controller
-       that includes hardware cursor support from the PL111.  */
-    dev = qdev_new("pl110_versatile");
-    object_property_set_link(OBJECT(dev), "framebuffer-memory",
-                             OBJECT(sysmem), &error_fatal);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0x10120000);
-    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, pic[16]);
+    // /* The versatile/PB actually has a modified Color LCD controller
+    //    that includes hardware cursor support from the PL111.  */
+    // dev = qdev_new("pl110_versatile");
+    // object_property_set_link(OBJECT(dev), "framebuffer-memory",
+    //                          OBJECT(sysmem), &error_fatal);
+    // sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    // sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0x10120000);
+    // sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, pic[16]);
 
-    /* Wire up the mux control signals from the SYS_CLCD register */
-    qdev_connect_gpio_out(sysctl, 0, qdev_get_gpio_in(dev, 0));
+    // /* Wire up the mux control signals from the SYS_CLCD register */
+    // qdev_connect_gpio_out(sysctl, 0, qdev_get_gpio_in(dev, 0));
 
-    dev = sysbus_create_varargs("pl181", 0x10005000, sic[22], sic[1], NULL);
-    dinfo = drive_get(IF_SD, 0, 0);
-    if (dinfo) {
-        DeviceState *card;
+    // dev = sysbus_create_varargs("pl181", 0x10005000, sic[22], sic[1], NULL);
+    // dinfo = drive_get(IF_SD, 0, 0);
+    // if (dinfo) {
+    //     DeviceState *card;
 
-        card = qdev_new(TYPE_SD_CARD);
-        qdev_prop_set_drive_err(card, "drive", blk_by_legacy_dinfo(dinfo),
-                                &error_fatal);
-        qdev_realize_and_unref(card, qdev_get_child_bus(dev, "sd-bus"),
-                               &error_fatal);
-    }
+    //     card = qdev_new(TYPE_SD_CARD);
+    //     qdev_prop_set_drive_err(card, "drive", blk_by_legacy_dinfo(dinfo),
+    //                             &error_fatal);
+    //     qdev_realize_and_unref(card, qdev_get_child_bus(dev, "sd-bus"),
+    //                            &error_fatal);
+    // }
 
-    dev = sysbus_create_varargs("pl181", 0x1000b000, sic[23], sic[2], NULL);
-    dinfo = drive_get(IF_SD, 0, 1);
-    if (dinfo) {
-        DeviceState *card;
+    // dev = sysbus_create_varargs("pl181", 0x1000b000, sic[23], sic[2], NULL);
+    // dinfo = drive_get(IF_SD, 0, 1);
+    // if (dinfo) {
+    //     DeviceState *card;
 
-        card = qdev_new(TYPE_SD_CARD);
-        qdev_prop_set_drive_err(card, "drive", blk_by_legacy_dinfo(dinfo),
-                                &error_fatal);
-        qdev_realize_and_unref(card, qdev_get_child_bus(dev, "sd-bus"),
-                               &error_fatal);
-    }
+    //     card = qdev_new(TYPE_SD_CARD);
+    //     qdev_prop_set_drive_err(card, "drive", blk_by_legacy_dinfo(dinfo),
+    //                             &error_fatal);
+    //     qdev_realize_and_unref(card, qdev_get_child_bus(dev, "sd-bus"),
+    //                            &error_fatal);
+    // }
 
-    /* Add PL031 Real Time Clock. */
-    sysbus_create_simple("pl031", 0x101e8000, pic[10]);
+    // /* Add PL031 Real Time Clock. */
+    // sysbus_create_simple("pl031", 0x101e8000, pic[10]);
 
-    dev = sysbus_create_simple(TYPE_ARM_SBCON_I2C, 0x10002000, NULL);
-    i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
-    i2c_slave_create_simple(i2c, "ds1338", 0x68);
+    // dev = sysbus_create_simple(TYPE_ARM_SBCON_I2C, 0x10002000, NULL);
+    // i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
+    // i2c_slave_create_simple(i2c, "ds1338", 0x68);
 
-    /* Add PL041 AACI Interface to the LM4549 codec */
-    pl041 = qdev_new("pl041");
-    qdev_prop_set_uint32(pl041, "nc_fifo_depth", 512);
-    if (machine->audiodev) {
-        qdev_prop_set_string(pl041, "audiodev", machine->audiodev);
-    }
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(pl041), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(pl041), 0, 0x10004000);
-    sysbus_connect_irq(SYS_BUS_DEVICE(pl041), 0, sic[24]);
+    // /* Add PL041 AACI Interface to the LM4549 codec */
+    // pl041 = qdev_new("pl041");
+    // qdev_prop_set_uint32(pl041, "nc_fifo_depth", 512);
+    // if (machine->audiodev) {
+    //     qdev_prop_set_string(pl041, "audiodev", machine->audiodev);
+    // }
+    // sysbus_realize_and_unref(SYS_BUS_DEVICE(pl041), &error_fatal);
+    // sysbus_mmio_map(SYS_BUS_DEVICE(pl041), 0, 0x10004000);
+    // sysbus_connect_irq(SYS_BUS_DEVICE(pl041), 0, sic[24]);
 
     /* Memory map for Versatile/PB:  */
     /* 0x10000000 System registers.  */
@@ -387,13 +420,54 @@ static void versatile_init(MachineState *machine, int board_id)
     /* 0x101f4000 SSPI.  */
     /* 0x34000000 NOR Flash */
 
-    dinfo = drive_get(IF_PFLASH, 0, 0);
-    pflash_cfi01_register(VERSATILE_FLASH_ADDR, "versatile.flash",
-                          VERSATILE_FLASH_SIZE,
-                          dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
-                          VERSATILE_FLASH_SECT_SIZE,
-                          4, 0x0089, 0x0018, 0x0000, 0x0, 0);
+    // dinfo = drive_get(IF_PFLASH, 0, 0);
+    // pflash_cfi01_register(VERSATILE_FLASH_ADDR, "versatile.flash",
+    //                       VERSATILE_FLASH_SIZE,
+    //                       dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
+    //                       VERSATILE_FLASH_SECT_SIZE,
+    //                       4, 0x0089, 0x0018, 0x0000, 0x0, 0);
+    printf("machine->ram_size %ld\n", machine->ram_size);
+    // DUO: add ROM memory for timer config 
+    MemoryRegion *rom_memory_TMR;
+    rom_memory_TMR = g_new(MemoryRegion, 1);
+    memory_region_init_rom(rom_memory_TMR, NULL, "ROM_TMR", 0x400, &error_abort);
+    memory_region_add_subregion(sysmem, 0X60005000, rom_memory_TMR);
 
+    MemoryRegion *rom_memory_CLK_RST;
+    rom_memory_CLK_RST = g_new(MemoryRegion, 1);
+    memory_region_init_rom(rom_memory_CLK_RST, NULL, "ROM_CLK_RST", 0x1000, &error_abort);
+    memory_region_add_subregion(sysmem, 0X60006000, rom_memory_CLK_RST);
+
+    MemoryRegion *rom_memory_FLOW_CTRL;
+    rom_memory_FLOW_CTRL = g_new(MemoryRegion, 1);
+    memory_region_init_rom(rom_memory_FLOW_CTRL, NULL, "ROM_FLOW_CTRL", 0x1000, &error_abort);
+    memory_region_add_subregion(sysmem, 0X60007000, rom_memory_FLOW_CTRL);
+
+    MemoryRegion *rom_memory_SYS_REGS;
+    rom_memory_SYS_REGS = g_new(MemoryRegion, 1);
+    memory_region_init_rom(rom_memory_SYS_REGS, NULL, "ROM_SYS_REGS", 0x300, &error_abort);
+    memory_region_add_subregion(sysmem, 0X6000C000, rom_memory_SYS_REGS);
+
+    MemoryRegion *rom_memory_EXC_VECTORS;
+    rom_memory_EXC_VECTORS = g_new(MemoryRegion, 1);
+    memory_region_init_rom(rom_memory_EXC_VECTORS, NULL, "ROM_EXC_VECTORS", 0x1000, &error_abort);
+    memory_region_add_subregion(sysmem, 0X6000F000, rom_memory_EXC_VECTORS);
+
+    MemoryRegion *rom_memory_IPATCH;
+    rom_memory_IPATCH = g_new(MemoryRegion, 1);
+    memory_region_init_rom(rom_memory_IPATCH, NULL, "ROM_IPATCH", 0x400, &error_abort);
+    memory_region_add_subregion(sysmem, 0X6001DC00, rom_memory_IPATCH);
+
+    MemoryRegion *rom_memory_FUSE;
+    rom_memory_FUSE = g_new(MemoryRegion, 1);
+    memory_region_init_rom(rom_memory_FUSE, NULL, "ROM_FUSE", 0x400, &error_abort);
+    memory_region_add_subregion(sysmem, 0X7000F800, rom_memory_FUSE);
+
+    MemoryRegion *rom_memory_KFUSE;
+    rom_memory_KFUSE = g_new(MemoryRegion, 1);
+    memory_region_init_rom(rom_memory_KFUSE, NULL, "ROM_KFUSE", 0x400, &error_abort);
+    memory_region_add_subregion(sysmem, 0X7000FC00, rom_memory_KFUSE);
+    
     versatile_binfo.ram_size = machine->ram_size;
     versatile_binfo.board_id = board_id;
     arm_load_kernel(cpu, machine, &versatile_binfo);
